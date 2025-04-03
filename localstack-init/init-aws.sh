@@ -1,12 +1,4 @@
 #!/bin/bash
-echo "Waiting for LocalStack to be ready..."
-# 簡単なヘルスチェック (より堅牢なチェックも可能)
-until curl -s http://localhost:4566/_localstack/health | grep '"s3": "running"' > /dev/null && \
-      curl -s http://localhost:4566/_localstack/health | grep '"dynamodb": "running"' > /dev/null; do
-  echo -n "."
-  sleep 1
-done
-echo "LocalStack is ready. Initializing resources..."
 
 # 環境変数から値を取得 (docker-compose.yml と合わせる)
 REGION="ap-northeast-1"
@@ -89,8 +81,18 @@ cat <<EOF > sample_data/questions/programming_principles/PP001.json
 }
 EOF
 
-# S3にアップロード
-aws --endpoint-url=${ENDPOINT_URL} s3 cp sample_data/questions/ s3://${BUCKET_NAME}/questions/ --recursive --region ${REGION}
+# S3にアップロード - AWS CLI 'cp' コマンドを使用する
+echo "Uploading readable_code/RC001.json..."
+aws --endpoint-url=${ENDPOINT_URL} s3 cp \
+    sample_data/questions/readable_code/RC001.json \
+    s3://${BUCKET_NAME}/questions/readable_code/RC001.json \
+    --region ${REGION} || echo "Failed to upload RC001.json"
 
-echo "Sample data uploaded."
+echo "Uploading programming_principles/PP001.json..."
+aws --endpoint-url=${ENDPOINT_URL} s3 cp \
+    sample_data/questions/programming_principles/PP001.json \
+    s3://${BUCKET_NAME}/questions/programming_principles/PP001.json \
+    --region ${REGION} || echo "Failed to upload PP001.json"
+
+echo "Sample data upload attempt finished."
 rm -rf sample_data # 一時ファイルを削除

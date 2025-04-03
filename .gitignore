@@ -85,7 +85,7 @@ docker-compose.override.yml # ローカル用の上書き設定など
 
 # LocalStack #
 ##############
-volume/ # LocalStackの永続化ボリューム (docker-compose.ymlで指定したパス)
+volume/
 .localstack # LocalStackが生成する可能性のあるファイル
 
 # IDE / Editor #

@@ -1,9 +1,7 @@
 # docker-compose.yml
-version: "3.8"
-
 services:
   localstack:
-    image: localstack/localstack:3.3 # バージョンを指定
+    image: localstack/localstack:latest
     ports:
       - "4566:4566" # Default endpoint for localstack services
       - "4510-4559:4510-4559" # Legacy endpoints (optional)
@@ -11,8 +9,10 @@ services:
       - DEBUG=1 # Enable debug logs (optional)
       - SERVICES=s3,dynamodb # Specify services to start
       - AWS_DEFAULT_REGION=ap-northeast-1 # デフォルトリージョン
+      - DOCKER_HOST=unix:///var/run/docker.sock # For docker interactions within localstack (if needed)
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack" # Persist data (optional)
+      - "/var/run/docker.sock:/var/run/docker.sock" # Mount docker socket (if needed)
     networks:
       - backend-network
 
