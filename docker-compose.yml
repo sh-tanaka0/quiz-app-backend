@@ -1,0 +1,41 @@
+# docker-compose.yml
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack:3.3 # バージョンを指定
+    ports:
+      - "4566:4566" # Default endpoint for localstack services
+      - "4510-4559:4510-4559" # Legacy endpoints (optional)
+    environment:
+      - DEBUG=1 # Enable debug logs (optional)
+      - SERVICES=s3,dynamodb # Specify services to start
+      - AWS_DEFAULT_REGION=ap-northeast-1 # デフォルトリージョン
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack" # Persist data (optional)
+    networks:
+      - backend-network
+
+  app:
+    build: . # Dockerfileのあるカレントディレクトリを指定
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app # コードの変更を即時反映させるためマウント
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566 # LocalStackのエンドポイントを指定
+      - AWS_ACCESS_KEY_ID=test # LocalStack用のダミーキー
+      - AWS_SECRET_ACCESS_KEY=test # LocalStack用のダミーキー
+      - AWS_DEFAULT_REGION=ap-northeast-1
+      - DYNAMODB_TABLE_NAME=QuizSessionTable # DynamoDBテーブル名
+      - S3_BUCKET_NAME=quiz-app-bucket # S3バケット名
+    depends_on:
+      - localstack
+    networks:
+      - backend-network
+    # FastAPIアプリを起動するコマンド (DockerfileのCMDを上書きする場合)
+    # command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+networks:
+  backend-network:
+    driver: bridge
