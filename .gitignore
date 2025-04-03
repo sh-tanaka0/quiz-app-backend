@@ -70,10 +70,10 @@ instance/
 
 # Environments #
 ################
-.env # ★★★ 環境変数ファイルは必ず無視する ★★★
+.env
 .venv
 env/
-venv/ # 作成した仮想環境ディレクトリ
+venv/
 ENV/
 env.bak/
 venv.bak/
