@@ -28,7 +28,7 @@ def test_shuffle_options():
     # 関数を実行
     shuffled_problems = shuffle_options(problems)
 
-    # --- アサーション (検証) ---
+# --- アサーション (検証) ---
     # リストが返ってくること
     assert isinstance(shuffled_problems, list)
     # 問題数が変わらないこと
