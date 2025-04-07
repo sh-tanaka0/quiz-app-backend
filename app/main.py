@@ -7,6 +7,7 @@ from typing import Annotated, Dict, List, Literal
 
 from botocore.exceptions import ClientError
 from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware  # <--- CORSMiddleware をインポート
 
 from .aws_clients import dynamodb_table, s3_client
 from .config import settings
@@ -24,6 +25,25 @@ from .models import (
 )
 
 app = FastAPI(title="Quiz App Backend")
+
+# フロントエンドのローカル開発サーバーのオリジンを許可リストに追加
+# 自分のフロントエンド開発環境のURLに合わせて変更してください
+origins = [
+    "http://localhost",  # ポート指定なし (通常は使わない)
+    "http://localhost:3000",  # Create React App のデフォルトなど
+    "http://localhost:5173",  # Vite のデフォルトなど
+    "http://localhost:8080",  # Vue CLI のデフォルトなど
+    # 必要に応じて他のローカル開発URLや、デプロイ後のフロントエンドURLを追加
+    # 例: "https://your-frontend-domain.com"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 許可するオリジン (上記リスト)
+    allow_credentials=True,  # クッキーなどの認証情報を含むリクエストを許可するか (必要に応じて True)
+    allow_methods=["*"],  # 許可するHTTPメソッド (GET, POST, etc.) "*"は全て許可
+    allow_headers=["*"],  # 許可するHTTPヘッダー "*"は全て許可
+)
 
 # TTL設定 (秒単位、2時間)
 SESSION_TTL_SECONDS = 2 * 60 * 60
@@ -243,7 +263,6 @@ def validate_answers(
                 isCorrect=is_correct,
                 userAnswer=user_ans.answer,
                 correctAnswer=correct_info.correctAnswer,
-                displayOrder=user_ans.displayOrder,
                 question=correct_info.question,
                 options=correct_info.options,
                 explanation=correct_info.explanation,

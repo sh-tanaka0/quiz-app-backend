@@ -5,6 +5,8 @@ REGION="ap-northeast-1"
 TABLE_NAME="QuizSessionTable"
 BUCKET_NAME="quiz-app-bucket"
 ENDPOINT_URL="http://localhost:4566" # スクリプト実行環境から見たLocalStack
+SAMPLE_DATA_DIR="./sample_data" # Python スクリプトで生成したデータがある場所
+
 
 echo "Creating S3 bucket: ${BUCKET_NAME}"
 aws --endpoint-url=${ENDPOINT_URL} s3api create-bucket --bucket ${BUCKET_NAME} --region ${REGION} --create-bucket-configuration LocationConstraint=${REGION}
@@ -31,68 +33,20 @@ echo "AWS resources initialized."
 
 # --- オプション: サンプル問題データのアップロード ---
 echo "Uploading sample questions to S3 bucket: ${BUCKET_NAME}"
-# 事前にサンプル問題JSONファイルを用意しておく
-mkdir -p sample_data/questions/readable_code
-mkdir -p sample_data/questions/programming_principles
-
-# readable_code 用サンプル (RC001.json)
-cat <<EOF > sample_data/questions/readable_code/RC001.json
-{
-  "questionId": "RC001",
-  "bookSource": "readable_code",
-  "category": "readability",
-  "question": "コード中に適切なコメントがあると可読性が向上します。\n適切なコメントをつける上で、何をコメントすべきかを考える必要がありますが、次のうち当てはまらないものはどれですか。(1つ選択してください)",
-  "options": [
-    {"id": "A", "text": "コードからすぐに分かることをコメントに書かない。"},
-    {"id": "B", "text": "酷いコードに優れたコメントを書く前に、酷いコードを優れたコードに修正できないかを考える。"},
-    {"id": "C", "text": "コメントは多ければ多いほど読み手にとっていいので、全ての行に対してコメントを書く。"},
-    {"id": "D", "text": "コメントは「何をやっているか」を書くのでなく、「何故そうなっているのか」を書いた方がよりいい。"}
-  ],
-  "correctAnswer": "C",
-  "explanation": {
-    "explanation": "コメントはコードの意図や理由を補足するものであり、コードからすぐに分かることや冗長なコメントは避けるべきです(A)。酷いコードにコメントを追加するよりも、まずコード自体を改善することが重要です(B)。また、コメントは動作そのものよりも、その背景や理由を説明する方が役立ちます(D)。しかし、コメントは多ければ多いほど良いという考えは誤りであり、適切な量と内容が重要です。全ての行にコメントをつけると可読性が低下し、重要な情報が埋もれてしまいます。",
-    "referencePages": "49-52",
-    "additionalResources": [
-      {"type": "article", "title": "読みやすいコメントを書くためのガイドライン", "url": "https://example.com/writing-readable-comments"}
-    ]
-  }
-}
-EOF
-
-# programming_principles 用サンプル (PP001.json)
-cat <<EOF > sample_data/questions/programming_principles/PP001.json
-{
-  "questionId": "PP001",
-  "bookSource": "programming_principles",
-  "category": "principles",
-  "question": "ソフトウェア設計の原則として知られる「単一責任の原則（SRP）」について、最もよく説明しているものはどれですか？",
-  "options": [
-    {"id": "A", "text": "ソフトウェアのエンティティ（クラス、モジュール、関数など）は、変更に対しては閉じており、拡張に対しては開いているべきである。"},
-    {"id": "B", "text": "クラスを変更する理由は一つだけであるべきである。"},
-    {"id": "C", "text": "派生型はその基本型と置換可能でなければならない。"},
-    {"id": "D", "text": "具体的な実装ではなく、抽象に依存すべきである。"}
-  ],
-  "correctAnswer": "B",
-  "explanation": {
-    "explanation": "単一責任の原則（SRP）は、クラスやモジュールが担当すべき責任はただ一つであるべきだという原則です。これにより、変更の影響範囲が限定され、コードの保守性や理解しやすさが向上します。他の選択肢は、A: オープン/クローズド原則、C: リスコフの置換原則、D: 依存関係逆転の原則 を説明しています。",
-    "referencePages": "85-88",
-    "additionalResources": []
-  }
-}
-EOF
-
-# S3にアップロード - AWS CLI 'cp' コマンドを使用する
-echo "Uploading readable_code/RC001.json..."
-aws --endpoint-url=${ENDPOINT_URL} s3 cp \
-    sample_data/questions/readable_code/RC001.json \
-    s3://${BUCKET_NAME}/questions/readable_code/RC001.json \
-    --region ${REGION} || echo "Failed to upload RC001.json"
-
-echo "Uploading programming_principles/PP001.json..."
-aws --endpoint-url=${ENDPOINT_URL} s3 cp \
-    sample_data/questions/programming_principles/PP001.json \
-    s3://${BUCKET_NAME}/questions/programming_principles/PP001.json \
-    --region ${REGION} || echo "Failed to upload PP001.json"
+# --- サンプル問題データのアップロード (修正箇所) ---
+# 事前に python generate_samples.py で生成されたデータがあるか確認
+if [ -d "${SAMPLE_DATA_DIR}/questions" ]; then
+  echo "Uploading sample questions from ${SAMPLE_DATA_DIR}/questions to S3..."
+  # aws s3 sync を使って sample_data/questions ディレクトリの内容を S3 バケットの /questions/ プレフィックスに同期（アップロード）
+  aws --endpoint-url=${ENDPOINT_URL} s3 sync \
+      "${SAMPLE_DATA_DIR}/questions" \
+      "s3://${BUCKET_NAME}/questions/" \
+      --region ${REGION} || echo "WARN: Failed to upload sample data from ${SAMPLE_DATA_DIR}/questions."
+  echo "Sample data upload attempt finished."
+else
+  echo "WARN: Sample data directory not found: ${SAMPLE_DATA_DIR}/questions. Skipping sample data upload."
+  echo "INFO: Run 'python generate_samples.py' first to create sample data."
+fi
 
 echo "Sample data upload attempt finished."
 rm -rf sample_data # 一時ファイルを削除
