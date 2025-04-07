@@ -299,10 +299,21 @@ async def get_quiz_questions(
             sessionId=session_id,
         )
 
+    except HTTPException as http_exc:
+        # すでに HTTPException である場合はそのまま re-raise する
+        # これにより、上の raise HTTPException(404) が下の except Exception で捕捉されるのを防ぐ
+        raise http_exc
     except ServiceError as e:
+        # ServiceError はカスタムエラーとして処理
+        # ServiceError 用のハンドラ (@app.exception_handler(ServiceError)) があれば
+        # raise e でも良いが、ここでは直接 HTTPException に変換して raise する
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
+        # その他の予期せぬエラーは 500 として処理
         print(f"Unexpected error in get_quiz_questions: {e}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while processing your request.",
@@ -330,10 +341,22 @@ async def submit_answers(
 
         return AnswerResponse(results=results)
 
+    except HTTPException as http_exc:
+        # すでに HTTPException である場合はそのまま re-raise する
+        # これにより、上の raise HTTPException(404) が下の except Exception で捕捉されるのを防ぐ
+        raise http_exc
     except ServiceError as e:
+        # ServiceError はカスタムエラーとして処理
+        # ServiceError 用のハンドラ (@app.exception_handler(ServiceError)) があれば
+        # raise e でも良いが、ここでは直接 HTTPException に変換して raise する
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
+        # その他の予期せぬエラーは 500 として処理
         print(f"Unexpected error in submit_answers: {e}")
+        # スタックトレースも出力するとデバッグに役立つ
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while processing your answers.",
