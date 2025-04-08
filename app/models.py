@@ -42,7 +42,7 @@ class Answer(BaseModel):
     """ユーザーの解答"""
 
     questionId: str
-    answer: str  # 選択肢ID (例: "A")
+    answer: str | None = None  # 選択肢ID (例: "A",　未選択時は None)
 
 
 class AnswerRequest(BaseModel):
@@ -58,7 +58,7 @@ class Result(BaseModel):
     questionId: str
     category: str | None = None  # S3データから取得
     isCorrect: bool
-    userAnswer: str
+    userAnswer: str | None = None  # ユーザーの解答 (選択肢ID)
     correctAnswer: str
     question: str  # S3データから取得
     options: List[Option]  # S3データから取得 (ユーザーが見た表示順とは限らない)

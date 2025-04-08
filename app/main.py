@@ -254,7 +254,12 @@ def validate_answers(
             continue
 
         correct_info = correct_data_map[q_id]
-        is_correct = user_ans.answer == correct_info.correctAnswer
+
+        # ユーザーが解答を未入力だった場合は不正解として処理
+        if user_ans.answer is None:
+            is_correct = False
+        else:
+            is_correct = user_ans.answer == correct_info.correctAnswer
 
         results.append(
             Result(
