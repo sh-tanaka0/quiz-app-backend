@@ -7,6 +7,7 @@ from typing import Annotated, Dict, List, Literal
 
 from botocore.exceptions import ClientError
 from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware  # <--- CORSMiddleware をインポート
 
 from .aws_clients import dynamodb_table, s3_client
 from .config import settings
@@ -24,6 +25,25 @@ from .models import (
 )
 
 app = FastAPI(title="Quiz App Backend")
+
+# フロントエンドのローカル開発サーバーのオリジンを許可リストに追加
+# 自分のフロントエンド開発環境のURLに合わせて変更してください
+origins = [
+    "http://localhost",  # ポート指定なし (通常は使わない)
+    "http://localhost:3000",  # Create React App のデフォルトなど
+    "http://localhost:5173",  # Vite のデフォルトなど
+    "http://localhost:8080",  # Vue CLI のデフォルトなど
+    # 必要に応じて他のローカル開発URLや、デプロイ後のフロントエンドURLを追加
+    # 例: "https://your-frontend-domain.com"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 許可するオリジン (上記リスト)
+    allow_credentials=True,  # クッキーなどの認証情報を含むリクエストを許可するか (必要に応じて True)
+    allow_methods=["*"],  # 許可するHTTPメソッド (GET, POST, etc.) "*"は全て許可
+    allow_headers=["*"],  # 許可するHTTPヘッダー "*"は全て許可
+)
 
 # TTL設定 (秒単位、2時間)
 SESSION_TTL_SECONDS = 2 * 60 * 60
@@ -234,7 +254,12 @@ def validate_answers(
             continue
 
         correct_info = correct_data_map[q_id]
-        is_correct = user_ans.answer == correct_info.correctAnswer
+
+        # ユーザーが解答を未入力だった場合は不正解として処理
+        if user_ans.answer is None:
+            is_correct = False
+        else:
+            is_correct = user_ans.answer == correct_info.correctAnswer
 
         results.append(
             Result(
@@ -243,7 +268,6 @@ def validate_answers(
                 isCorrect=is_correct,
                 userAnswer=user_ans.answer,
                 correctAnswer=correct_info.correctAnswer,
-                displayOrder=user_ans.displayOrder,
                 question=correct_info.question,
                 options=correct_info.options,
                 explanation=correct_info.explanation,
@@ -299,10 +323,21 @@ async def get_quiz_questions(
             sessionId=session_id,
         )
 
+    except HTTPException as http_exc:
+        # すでに HTTPException である場合はそのまま re-raise する
+        # これにより、上の raise HTTPException(404) が下の except Exception で捕捉されるのを防ぐ
+        raise http_exc
     except ServiceError as e:
+        # ServiceError はカスタムエラーとして処理
+        # ServiceError 用のハンドラ (@app.exception_handler(ServiceError)) があれば
+        # raise e でも良いが、ここでは直接 HTTPException に変換して raise する
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
+        # その他の予期せぬエラーは 500 として処理
         print(f"Unexpected error in get_quiz_questions: {e}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while processing your request.",
@@ -330,10 +365,22 @@ async def submit_answers(
 
         return AnswerResponse(results=results)
 
+    except HTTPException as http_exc:
+        # すでに HTTPException である場合はそのまま re-raise する
+        # これにより、上の raise HTTPException(404) が下の except Exception で捕捉されるのを防ぐ
+        raise http_exc
     except ServiceError as e:
+        # ServiceError はカスタムエラーとして処理
+        # ServiceError 用のハンドラ (@app.exception_handler(ServiceError)) があれば
+        # raise e でも良いが、ここでは直接 HTTPException に変換して raise する
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except Exception as e:
+        # その他の予期せぬエラーは 500 として処理
         print(f"Unexpected error in submit_answers: {e}")
+        # スタックトレースも出力するとデバッグに役立つ
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while processing your answers.",
