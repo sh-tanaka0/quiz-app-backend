@@ -8,6 +8,7 @@ from typing import Annotated, Dict, List, Literal
 from botocore.exceptions import ClientError
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware  # <--- CORSMiddleware をインポート
+from mangum import Mangum
 
 from .aws_clients import dynamodb_table, s3_client
 from .config import settings
@@ -26,16 +27,9 @@ from .models import (
 
 app = FastAPI(title="Quiz App Backend")
 
-# フロントエンドのローカル開発サーバーのオリジンを許可リストに追加
-# 自分のフロントエンド開発環境のURLに合わせて変更してください
-origins = [
-    "http://localhost",  # ポート指定なし (通常は使わない)
-    "http://localhost:3000",  # Create React App のデフォルトなど
-    "http://localhost:5173",  # Vite のデフォルトなど
-    "http://localhost:8080",  # Vue CLI のデフォルトなど
-    # 必要に応じて他のローカル開発URLや、デプロイ後のフロントエンドURLを追加
-    # 例: "https://your-frontend-domain.com"
-]
+# CORS設定
+origin = settings.frontend_origin
+origins = [origin]
 
 app.add_middleware(
     CORSMiddleware,
@@ -391,3 +385,10 @@ async def submit_answers(
 async def root():
     """ルートエンドポイント - サーバー稼働確認用"""
     return {"message": "Quiz App Backend is running!"}
+
+
+# FastAPIアプリケーションインスタンス `app` が定義された後に追加
+# lifespan="off" は、Lambdaの実行環境でFastAPIのstartup/shutdownイベントを
+# 安全に扱うため、または不要な場合に推奨されることがあります。
+# アプリケーションでstartup/shutdownイベントを使用していない場合は "off" が無難です。
+handler = Mangum(app, lifespan="off")
