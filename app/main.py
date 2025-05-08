@@ -3,11 +3,11 @@ import random
 import time
 import uuid
 from contextlib import asynccontextmanager
-from decimal import Decimal
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 import aioboto3
 from boto3.dynamodb.conditions import Key  # DynamoDBクエリ条件のためインポート
+from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,23 +27,27 @@ from .models import (
     SessionDataItem,
 )
 
-
 # --- Helper Function for DynamoDB Deserialization ---
-def deserialize_dynamodb_item(item: Dict[str, Any]) -> Dict[str, Any]:
-    if isinstance(item, list):
-        return [deserialize_dynamodb_item(i) for i in item]
-    elif isinstance(item, dict):
-        new_dict = {}
-        for k, v in item.items():
-            new_dict[k] = deserialize_dynamodb_item(v)
-        return new_dict
-    elif isinstance(item, Decimal):
-        if item % 1 == 0:
-            return int(item)
-        else:
-            return float(item)
-    else:
-        return item
+# DynamoDBの型記述子をアンラップしてPythonネイティブ型に変換する
+_dynamodb_deserializer = TypeDeserializer()
+
+
+def deserialize_dynamodb_item_fully(item: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    DynamoDBのアイテム (型記述子付き) を、Pythonネイティブな型の辞書に完全に変換する。
+    例: {'S': 'value'} -> 'value', {'N': '123'} -> Decimal('123'),
+         {'L': [{'S': 'a'}]} -> ['a']
+    この関数はトップレベルの辞書を受け取り、各値をデシリアライズします。
+    注意: TypeDeserializer().deserialize は Decimal 型を返すので、
+          必要であればさらに int/float に変換する処理を ProblemData モデルのバリデーションや
+          この関数の後段で行うか、Pydanticのカスタムシリアライザ/バリデータで対応します。
+    """
+    if not item:
+        return {}
+    python_native_item = {}
+    for key, value in item.items():
+        python_native_item[key] = _dynamodb_deserializer.deserialize(value)
+    return python_native_item
 
 
 # --- Lifespan Event Handler for Async Clients ---
@@ -204,7 +208,7 @@ async def get_questions_from_dynamodb(
         # BatchGetItemで問題データを取得 (1回のリクエストで最大100アイテム)
         # selected_ids が100を超える場合は分割してリクエストする必要がある。
         # ここでは num_to_fetch (したがって selected_ids) が100以下と仮定 (APIのcount上限が50なので問題なし)。
-        keys_for_batch_get = [{"questionId": q_id} for q_id in selected_ids]
+        keys_for_batch_get = [{"questionId": {"S": q_id}} for q_id in selected_ids]
 
         request_items = {
             settings.dynamodb_quiz_problems_table_name: {  # テーブル名を直接指定
@@ -236,10 +240,18 @@ async def get_questions_from_dynamodb(
 
     for item_dict in raw_problems_from_db:
         try:
-            deserialized_item = deserialize_dynamodb_item(
-                item_dict
-            )  # Decimal型などを変換
-            problems.append(ProblemData.model_validate(deserialized_item))
+            # DynamoDBの型記述子をアンラップしてPythonネイティブな辞書に変換
+            python_native_dict = deserialize_dynamodb_item_fully(item_dict)
+
+            # さらに、もし ProblemData モデルが Decimal ではなく int/float を期待しているなら、
+            # 既存の deserialize_dynamodb_item を使って Decimal を変換する
+            # (ただし、deserialize_dynamodb_item は型記述子をアンラップしないので、
+            #  deserialize_dynamodb_item_fully の後に適用するのは適切ではない。
+            #  Pydantic が Decimal を扱えるので、この変換は不要な可能性が高い)
+            # final_dict_for_pydantic = deserialize_dynamodb_item(python_native_dict) # 既存のヘルパーの適用方法を再考
+
+            # PydanticはDecimalを適切に扱えるはずなので、python_native_dict をそのまま渡す
+            problems.append(ProblemData.model_validate(python_native_dict))
         except Exception as e:
             print(
                 f"Error validating problem data from DynamoDB: {e}, item: {item_dict.get('questionId')}"
@@ -306,7 +318,7 @@ async def get_session_data(
         item = response.get("Item")
         if not item:
             return None
-        deserialized_item = deserialize_dynamodb_item(item)
+        deserialized_item = deserialize_dynamodb_item_fully(item)
         current_time = int(time.time())
         if "ttl" in deserialized_item and deserialized_item["ttl"] < current_time:
             return None
