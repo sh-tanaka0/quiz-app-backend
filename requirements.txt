@@ -1,8 +1,10 @@
 aiofiles==23.2.1
 annotated-types==0.7.0
 anyio==4.9.0
-boto3==1.34.162
-botocore==1.34.162
+# boto3==1.34.162 # バージョン指定を削除またはコメントアウト
+boto3
+# botocore==1.34.162 # バージョン指定を削除またはコメントアウト
+botocore
 certifi==2025.1.31
 charset-normalizer==3.4.1
 click==8.1.8
@@ -38,7 +40,7 @@ PyYAML==6.0.2
 requests==2.31.0
 rich==14.0.0
 rich-toolkit==0.14.1
-s3transfer==0.10.4
+# s3transfer==0.10.4 # boto3 が依存しているので残すか、boto3に任せる
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
@@ -51,3 +53,7 @@ urllib3==1.26.20
 uvicorn==0.29.0
 watchfiles==1.0.4
 websockets==15.0.1
+
+# === 非同期AWSライブラリを追加 ===
+aiobotocore
+aioboto3
