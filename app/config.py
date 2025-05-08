@@ -14,4 +14,10 @@ class Settings(BaseSettings):
     s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "quiz-app-bucket")
     frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 
+    # DynamoDB設定
+    dynamodb_quiz_problems_table_name: str = "QuizProblems" 
+    dynamodb_session_table_name: str = "QuizSessions"     
+    gsi_book_source_index_name: str = "BookSourceIndex"   
+
+    
 settings = Settings()
