@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import random
-import time
+import time  # store_session_data と get_session_data で time.time() を使用するため残します
 import uuid
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
@@ -9,7 +9,7 @@ import aioboto3
 from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
-from fastapi import (  # Depends を追加
+from fastapi import (
     Body,
     Depends,
     FastAPI,
@@ -36,7 +36,7 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.INFO)  # INFOレベルのログは出力される可能性があります
 
 _dynamodb_deserializer = TypeDeserializer()
 
@@ -51,11 +51,10 @@ def deserialize_dynamodb_item_fully(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # --- グローバルAWSクライアントの宣言 ---
-# これらのクライアントは、最初のアクセス時に非同期で初期化されます。
 _aws_dynamodb_client: Optional[Any] = None
 _aws_quiz_problems_table: Optional[Any] = None
 _aws_session_data_table: Optional[Any] = None
-_client_init_lock = asyncio.Lock()  # 初期化処理の競合を防ぐためのロック
+_client_init_lock = asyncio.Lock()
 
 
 async def _initialize_global_aws_clients():
@@ -64,28 +63,17 @@ async def _initialize_global_aws_clients():
     """
     global _aws_dynamodb_client, _aws_quiz_problems_table, _aws_session_data_table
 
-    async with _client_init_lock:  # 複数箇所から同時に初期化が試みられるのを防ぐ
-        if _aws_dynamodb_client is None:  # まだ初期化されていなければ
-            logger.info("GLOBAL_INIT: Initializing AWS clients globally...")
-            start_time = time.perf_counter()
-
+    async with _client_init_lock:
+        if _aws_dynamodb_client is None:
+            logger.info(
+                "Initializing AWS clients globally..."
+            )  # 初期化のログは残します
             session = aioboto3.Session(region_name=settings.aws_default_region)
-            # aioboto3.Session.client() と resource() はコンテキストマネージャとして使用することを推奨
-            # しかし、グローバルクライアントとして永続化するため、ここでは直接 `await __aenter__()` のような形で
-            # 取得するか、あるいはセッションから直接クライアントとリソースを作成し、
-            # Lambda の終了時にクリーンアップする方法がないことを受け入れる (Lambda環境では通常問題にならない)。
-            # ここでは簡潔さのため、コンテキストマネージャなしで取得します。
-            # 実際には、アプリケーション終了時にこれらのリソースをクローズする仕組みがないことに注意。
-            # Lambdaでは実行環境が破棄される際に自動的にクリーンアップされることを期待します。
 
-            # DynamoDBクライアントの初期化
-            # 一時的なクライアントとリソースを作成して、そこから永続的なクライアントとテーブルオブジェクトを取得
             temp_dynamodb_client = session.client(
                 "dynamodb", region_name=settings.aws_default_region
             )
-            _aws_dynamodb_client = (
-                await temp_dynamodb_client.__aenter__()
-            )  # Manually enter context
+            _aws_dynamodb_client = await temp_dynamodb_client.__aenter__()
 
             temp_dynamodb_resource = session.resource(
                 "dynamodb", region_name=settings.aws_default_region
@@ -98,26 +86,20 @@ async def _initialize_global_aws_clients():
             _aws_session_data_table = await entered_dynamodb_resource.Table(
                 settings.dynamodb_session_table_name
             )
-
-            # 注意: 上記の __aenter__ で取得したクライアント/リソースは、対応する __aexit__ を呼び出すべきですが、
-            # グローバルオブジェクトとして保持する場合、そのタイミングが難しいです。
-            # Lambdaのライフサイクルに依存する形となります。
-            # より堅牢なのは、セッションオブジェクトをグローバルに保持し、必要に応じてクライアント/リソースを生成することかもしれません。
-            # しかし、ここではレポートの「グローバルクライアント初期化」の趣旨に沿って、クライアントオブジェクト自体をグローバルに保持します。
-
-            end_time = time.perf_counter()
             logger.info(
-                f"GLOBAL_INIT: AWS clients initialized globally in {end_time - start_time:.4f} seconds."
-            )
+                "AWS clients initialized globally."
+            )  # 初期化完了のログは残します
         else:
-            logger.info("GLOBAL_INIT: AWS clients already initialized globally.")
+            logger.info(
+                "AWS clients already initialized globally."
+            )  # 既に初期化済みの場合のログも残します
 
 
 # --- 依存性注入用のゲッター関数 ---
 async def get_dynamodb_client() -> Any:
     if _aws_dynamodb_client is None:
         await _initialize_global_aws_clients()
-    if _aws_dynamodb_client is None:  # 初期化失敗の場合
+    if _aws_dynamodb_client is None:
         raise HTTPException(
             status_code=503,
             detail="DynamoDB client not available after initialization attempt.",
@@ -128,7 +110,7 @@ async def get_dynamodb_client() -> Any:
 async def get_quiz_problems_table() -> Any:
     if _aws_quiz_problems_table is None:
         await _initialize_global_aws_clients()
-    if _aws_quiz_problems_table is None:  # 初期化失敗の場合
+    if _aws_quiz_problems_table is None:
         raise HTTPException(
             status_code=503,
             detail="Quiz problems table not available after initialization attempt.",
@@ -139,7 +121,7 @@ async def get_quiz_problems_table() -> Any:
 async def get_session_data_table() -> Any:
     if _aws_session_data_table is None:
         await _initialize_global_aws_clients()
-    if _aws_session_data_table is None:  # 初期化失敗の場合
+    if _aws_session_data_table is None:
         raise HTTPException(
             status_code=503,
             detail="Session data table not available after initialization attempt.",
@@ -147,31 +129,11 @@ async def get_session_data_table() -> Any:
     return _aws_session_data_table
 
 
-# --- Lifespan Event Handler for Async Clients (コメントアウトまたは削除) ---
-# Mangum(lifespan="off") を使用するため、FastAPIのlifespanはトリガーされません。
-# クライアント初期化は上記のグローバルスコープで行われます。
-"""
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # このlifespan関数は Mangum(lifespan="off") のため実行されません。
-    # もし実行された場合のログを残しておくこともできますが、混乱を避けるためコメントアウト推奨。
-    logger.info("FastAPI Lifespan event: START (This should NOT run if Mangum lifespan='off')")
-    
-    # --- ここに以前の初期化ロジックがあった ---
-    # app.state.dynamodb_client = ...
-    # app.state.quiz_problems_table = ...
-    # app.state.session_data_table = ...
-    
-    yield
-    logger.info("FastAPI Lifespan event: END (This should NOT run if Mangum lifespan='off')")
-"""
-
 # --- FastAPI Application ---
-# app = FastAPI(title="Quiz App Backend", lifespan=lifespan) # lifespan引数を削除
 app = FastAPI(title="Quiz App Backend")
 
 
-# CORS設定 (変更なし)
+# CORS設定
 origin = settings.frontend_origin
 origins = [origin] if origin and origin != "None" and origin != "" else ["*"]
 app.add_middleware(
@@ -196,7 +158,7 @@ class ServiceError(Exception):
 async def service_exception_handler(request: Request, exc: ServiceError):
     logger.error(
         f"ServiceError caught: Status={exc.status_code}, Detail={exc.detail}",
-        exc_info=True,
+        exc_info=True,  # エラーのスタックトレースを出力するために残します
     )
     return JSONResponse(
         status_code=exc.status_code,
@@ -204,25 +166,13 @@ async def service_exception_handler(request: Request, exc: ServiceError):
     )
 
 
-# --- DynamoDB Operations for Quiz Problems (クライアント取得方法を変更) ---
+# --- DynamoDB Operations for Quiz Problems ---
 async def get_questions_from_dynamodb(
-    # request: Request, # app.stateを使わないので不要に
-    dynamodb_client: Annotated[Any, Depends(get_dynamodb_client)],  # 依存性注入で取得
-    quiz_problems_table: Annotated[
-        Any, Depends(get_quiz_problems_table)
-    ],  # 依存性注入で取得
+    dynamodb_client: Annotated[Any, Depends(get_dynamodb_client)],
+    quiz_problems_table: Annotated[Any, Depends(get_quiz_problems_table)],
     book_source: Literal["readable_code", "programming_principles", "both"],
     count: int,
 ) -> List[ProblemData]:
-    func_start_time = time.perf_counter()
-    logger.info(
-        f"get_questions_from_dynamodb: START - Fetching questions for bookSource='{book_source}', count={count}"
-    )
-    # グローバルクライアントを直接使用 (または依存性注入されたものを使用)
-    # quiz_problems_table = request.app.state.quiz_problems_table # 変更
-    # dynamodb_client = request.app.state.dynamodb_client       # 変更
-
-    # ... (以降のロジックはほぼ変更なし、request.app.stateへのアクセス部分のみ修正)
     target_book_sources: List[str] = []
     if book_source == "both":
         target_book_sources.extend(["readable_code", "programming_principles"])
@@ -232,25 +182,16 @@ async def get_questions_from_dynamodb(
     all_question_ids_from_gsi: List[str] = []
 
     try:
-        gsi_query_start_time = time.perf_counter()
         query_tasks = []
         for src in target_book_sources:
-            logger.info(
-                f"Querying GSI '{settings.gsi_book_source_index_name}' for bookSource: {src}"
-            )
             query_tasks.append(
-                quiz_problems_table.query(  # quiz_problems_table を直接使用
+                quiz_problems_table.query(
                     IndexName=settings.gsi_book_source_index_name,
                     KeyConditionExpression=Key("bookSource").eq(src),
                     ProjectionExpression="questionId",
                 )
             )
-        # ... (残りの get_questions_from_dynamodb の内容は、クライアントの参照方法以外は既存のものを維持) ...
         query_results = await asyncio.gather(*query_tasks, return_exceptions=True)
-        gsi_query_end_time = time.perf_counter()
-        logger.info(
-            f"get_questions_from_dynamodb: GSI queries completed in {gsi_query_end_time - gsi_query_start_time:.4f} seconds."
-        )
 
         for idx, result_item in enumerate(query_results):
             current_source = target_book_sources[idx]
@@ -264,15 +205,12 @@ async def get_questions_from_dynamodb(
                 )
 
             items_from_query = result_item.get("Items", [])
-            logger.info(
-                f"Found {len(items_from_query)} question IDs for bookSource: {current_source}"
-            )
             for item_id_obj in items_from_query:
                 all_question_ids_from_gsi.append(item_id_obj["questionId"])
 
             if "LastEvaluatedKey" in result_item:
-                logger.warning(
-                    f"Warning: More items available for bookSource {current_source}, but pagination not fully implemented in this example."
+                logger.warning(  # ページネーション未対応の警告は運用上有用な場合があるので残します
+                    f"Warning: More items available for bookSource {current_source}, but pagination not fully implemented."
                 )
     except ClientError as e:
         logger.error(f"DynamoDB ClientError while querying GSI: {e}", exc_info=True)
@@ -289,56 +227,42 @@ async def get_questions_from_dynamodb(
         )
 
     if not all_question_ids_from_gsi:
-        logger.warning(f"No question IDs found from GSI for source: {book_source}")
+        # logger.warning(f"No question IDs found from GSI for source: {book_source}") # ServiceErrorでカバー
         raise ServiceError(
             status_code=404, detail=f"No questions found for source: {book_source}"
         )
 
     num_to_fetch = min(count, len(all_question_ids_from_gsi))
     if num_to_fetch < count:
-        logger.warning(
+        logger.warning(  # リクエスト数と取得可能数の差異の警告は残します
             f"Warning: Requested {count} questions, but only {num_to_fetch} available for source '{book_source}'."
         )
 
     if num_to_fetch == 0:
-        logger.info("get_questions_from_dynamodb: END - No questions to fetch.")
         return []
 
     selected_ids = random.sample(all_question_ids_from_gsi, num_to_fetch)
-    logger.info(f"Selected {len(selected_ids)} random question IDs for BatchGetItem.")
-
     problems: List[ProblemData] = []
     if not selected_ids:
-        logger.info(
-            "get_questions_from_dynamodb: END - No selected IDs, returning empty list."
-        )
         return problems
 
     try:
-        batch_get_start_time = time.perf_counter()
         keys_for_batch_get = [{"questionId": {"S": q_id}} for q_id in selected_ids]
         request_items = {
             settings.dynamodb_quiz_problems_table_name: {
                 "Keys": keys_for_batch_get,
             }
         }
-        response = await dynamodb_client.batch_get_item(
-            RequestItems=request_items
-        )  # dynamodb_client を直接使用
-        batch_get_end_time = time.perf_counter()
-        logger.info(
-            f"get_questions_from_dynamodb: BatchGetItem completed in {batch_get_end_time - batch_get_start_time:.4f} seconds."
-        )
+        response = await dynamodb_client.batch_get_item(RequestItems=request_items)
 
         raw_problems_from_db = response.get("Responses", {}).get(
             settings.dynamodb_quiz_problems_table_name, []
         )
-        logger.info(f"Retrieved {len(raw_problems_from_db)} items from BatchGetItem.")
 
         if response.get("UnprocessedKeys", {}).get(
             settings.dynamodb_quiz_problems_table_name
         ):
-            logger.warning(
+            logger.warning(  # UnprocessedKeysの警告は残します
                 "Warning: BatchGetItem returned UnprocessedKeys, some items may not have been retrieved. Retry logic not implemented."
             )
     except ClientError as e:
@@ -352,7 +276,6 @@ async def get_questions_from_dynamodb(
             status_code=500, detail="Unexpected error fetching problem details."
         )
 
-    deserialization_validation_start_time = time.perf_counter()
     parsed_count = 0
     for item_dict in raw_problems_from_db:
         try:
@@ -360,15 +283,11 @@ async def get_questions_from_dynamodb(
             problems.append(ProblemData.model_validate(python_native_dict))
             parsed_count += 1
         except Exception as e:
-            logger.error(
+            logger.error(  # バリデーションエラーのログは重要なので残します
                 f"Error validating problem data from DynamoDB: {e}, item_id: {item_dict.get('questionId', {}).get('S')}",
                 exc_info=True,
             )
-            continue
-    deserialization_validation_end_time = time.perf_counter()
-    logger.info(
-        f"get_questions_from_dynamodb: Deserialization and validation of {parsed_count} items completed in {deserialization_validation_end_time - deserialization_validation_start_time:.4f} seconds."
-    )
+            continue  # 1つのアイテムのパースエラーで全体を失敗させない
 
     if not problems and num_to_fetch > 0:
         logger.error(
@@ -378,11 +297,6 @@ async def get_questions_from_dynamodb(
             status_code=500,
             detail="Failed to load or validate any question data after fetching.",
         )
-
-    func_end_time = time.perf_counter()
-    logger.info(
-        f"get_questions_from_dynamodb: END - Processed {len(problems)} problems in {func_end_time - func_start_time:.4f} seconds."
-    )
     return problems
 
 
@@ -393,18 +307,12 @@ def shuffle_options(questions: List[ProblemData]) -> List[ProblemData]:
     return questions
 
 
-# store_session_data と get_session_data も同様にクライアントを依存性注入で受け取るように変更
 async def store_session_data(
-    session_dynamodb_table: Annotated[Any, Depends(get_session_data_table)],  # 変更
+    session_dynamodb_table: Annotated[Any, Depends(get_session_data_table)],
     session_id: str,
     problems: List[ProblemData],
 ) -> None:
-    # ... (内部ロジックは変更なし)
-    func_start_time = time.perf_counter()
-    logger.info(
-        f"store_session_data: START - Storing session for sessionId: {session_id}, problems_count: {len(problems)}"
-    )
-    current_time = int(time.time())
+    current_time = int(time.time())  # time.time() を使用
     ttl_timestamp = current_time + SESSION_TTL_SECONDS
 
     problem_data_map: Dict[str, SessionDataItem] = {}
@@ -425,13 +333,7 @@ async def store_session_data(
     try:
         item_to_store = session_data.model_dump(mode="json")
         item_to_store["sessionId"] = session_id
-        await session_dynamodb_table.put_item(
-            Item=item_to_store
-        )  # session_dynamodb_table を直接使用
-        func_end_time = time.perf_counter()
-        logger.info(
-            f"store_session_data: END - Session data stored for sessionId: {session_id} in {func_end_time - func_start_time:.4f} seconds."
-        )
+        await session_dynamodb_table.put_item(Item=item_to_store)
     except ClientError as e:
         logger.error(
             f"Error storing session data to DynamoDB for {session_id}: {e}",
@@ -449,33 +351,24 @@ async def store_session_data(
 
 
 async def get_session_data(
-    session_dynamodb_table: Annotated[Any, Depends(get_session_data_table)],  # 変更
+    session_dynamodb_table: Annotated[Any, Depends(get_session_data_table)],
     session_id: str,
 ) -> Optional[SessionData]:
-    # ... (内部ロジックは変更なし)
-    func_start_time = time.perf_counter()
-    logger.info(
-        f"get_session_data: START - Retrieving session for sessionId: {session_id}"
-    )
     try:
-        response = await session_dynamodb_table.get_item(
-            Key={"sessionId": session_id}
-        )  # session_dynamodb_table を直接使用
+        response = await session_dynamodb_table.get_item(Key={"sessionId": session_id})
         item = response.get("Item")
         if not item:
-            logger.warning(f"Session data not found for sessionId: {session_id}")
+            logger.warning(
+                f"Session data not found for sessionId: {session_id}"
+            )  # セッションが見つからない警告は残します
             return None
-        current_time = int(time.time())
+        current_time = int(time.time())  # time.time() を使用
         if "ttl" in item and item["ttl"] < current_time:
-            logger.info(
+            logger.info(  # TTL切れのログは残します
                 f"Session {session_id} has expired (TTL: {item['ttl']}, Current: {current_time})."
             )
             return None
         validated_data = SessionData.model_validate(item)
-        func_end_time = time.perf_counter()
-        logger.info(
-            f"get_session_data: END - Session data retrieved and validated for {session_id} in {func_end_time - func_start_time:.4f} seconds."
-        )
         return validated_data
     except ClientError as e:
         logger.error(
@@ -494,13 +387,12 @@ async def get_session_data(
 def validate_answers(
     user_answers: List[Answer], session_data: SessionData
 ) -> List[Result]:
-    # (変更なし)
     results = []
     correct_data_map = session_data.problem_data
     for user_ans in user_answers:
         q_id = user_ans.questionId
         if q_id not in correct_data_map:
-            logger.warning(
+            logger.warning(  # ユーザー解答のIDがセッションにない警告は残します
                 f"Question ID {q_id} from user answer not found in session data. Skipping."
             )
             continue
@@ -523,10 +415,9 @@ def validate_answers(
     return results
 
 
-# --- API Endpoints (クライアント取得方法を依存性注入に変更) ---
+# --- API Endpoints ---
 @app.get("/questions", response_model=QuestionResponse)
 async def get_quiz_questions(
-    # request: Request, # 不要
     bookSource: Annotated[
         Literal["readable_code", "programming_principles", "both"],
         Query(description="問題の出典"),
@@ -535,59 +426,36 @@ async def get_quiz_questions(
     timeLimit: Annotated[
         int, Query(ge=10, le=300, description="1問あたりの制限時間(秒)")
     ],
-    # 依存性注入でクライアントを取得
     dynamodb_client_injected: Annotated[Any, Depends(get_dynamodb_client)],
     quiz_problems_table_injected: Annotated[Any, Depends(get_quiz_problems_table)],
     session_data_table_injected: Annotated[Any, Depends(get_session_data_table)],
-    request: Request,  # Requestオブジェクトはaws_request_id取得のために残す
+    request: Request,
 ):
-    endpoint_start_time = time.perf_counter()
     aws_request_id = "N/A"
-    if (
-        "aws.lambda_context" in request.scope
-    ):  # requestオブジェクトはaws_request_id取得のために必要
+    if "aws.lambda_context" in request.scope:
         aws_request_id = request.scope["aws.lambda_context"].aws_request_id
-    logger.info(
-        f"[ReqID: {aws_request_id}] /questions: START - bookSource='{bookSource}', count={count}, timeLimitPerQuestion={timeLimit}"
+    logger.info(  # エンドポイント開始ログは残します
+        f"[ReqID: {aws_request_id}] GET /questions: START - bookSource='{bookSource}', count={count}, timeLimitPerQuestion={timeLimit}"
     )
 
-    # クライアント存在確認ロジックは不要になる (Dependsが初期化を保証、失敗時はHTTPException)
-    # logger.info(f"[ReqID: {aws_request_id}] /questions: AWS clients successfully retrieved via Depends.")
-
     try:
-        step_start_time = time.perf_counter()
         problems_from_db = await get_questions_from_dynamodb(
             dynamodb_client_injected, quiz_problems_table_injected, bookSource, count
         )
-        step_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /questions: Step 'get_questions_from_dynamodb' completed in {step_end_time - step_start_time:.4f} seconds. Found {len(problems_from_db)} problems."
-        )
 
         if not problems_from_db:
-            logger.warning(
-                f"[ReqID: {aws_request_id}] /questions: No problems returned from get_questions_from_dynamodb for source: {bookSource}"
-            )
+            # logger.warning( # ServiceErrorでカバー
+            # f"[ReqID: {aws_request_id}] /questions: No problems returned from get_questions_from_dynamodb for source: {bookSource}"
+            # )
             raise ServiceError(
                 status_code=404,
                 detail=f"No questions could be loaded for source: {bookSource}. Please try a different source or smaller count.",
             )
 
-        step_start_time = time.perf_counter()
         shuffled_problems = shuffle_options(problems_from_db)
-        step_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /questions: Step 'shuffle_options' completed in {step_end_time - step_start_time:.4f} seconds."
-        )
-
         session_id = f"sess_{uuid.uuid4()}"
-        step_start_time = time.perf_counter()
         await store_session_data(
             session_data_table_injected, session_id, shuffled_problems
-        )
-        step_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /questions: Step 'store_session_data' completed in {step_end_time - step_start_time:.4f} seconds for sessionId: {session_id}."
         )
 
         response_questions = [
@@ -604,24 +472,21 @@ async def get_quiz_questions(
             timeLimit=timeLimit * len(response_questions),
             sessionId=session_id,
         )
-        endpoint_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /questions: END - Successfully processed request in {endpoint_end_time - endpoint_start_time:.4f} seconds. Returning {len(response_questions)} questions."
+        logger.info(  # エンドポイント終了ログは残します
+            f"[ReqID: {aws_request_id}] GET /questions: END - Successfully processed. Returning {len(response_questions)} questions."
         )
         return final_response
     except ServiceError as e:
-        endpoint_end_time = time.perf_counter()
-        logger.error(
-            f"[ReqID: {aws_request_id}] /questions: ServiceError caught at endpoint level after {endpoint_end_time - endpoint_start_time:.4f}s. Status: {e.status_code}, Detail: {e.detail}"
+        logger.error(  # ServiceErrorは専用ハンドラでログ出力されるが、リクエストIDを含めるためにここでもログ出力
+            f"[ReqID: {aws_request_id}] GET /questions: ServiceError. Status: {e.status_code}, Detail: {e.detail}"
         )
-        raise e
+        raise e  # service_exception_handler に処理を委譲
     except Exception as e:
-        endpoint_end_time = time.perf_counter()
-        logger.critical(
-            f"[ReqID: {aws_request_id}] /questions: CRITICAL - Unexpected error in get_quiz_questions after {endpoint_end_time - endpoint_start_time:.4f}s: {e}",
+        logger.critical(  # 予期せぬエラーのログは重要なので残します
+            f"[ReqID: {aws_request_id}] GET /questions: CRITICAL - Unexpected error: {e}",
             exc_info=True,
         )
-        raise ServiceError(
+        raise ServiceError(  # クライアントには汎用的なエラーメッセージを返す
             status_code=500,
             detail="An unexpected error occurred while processing your request.",
         )
@@ -629,69 +494,46 @@ async def get_quiz_questions(
 
 @app.post("/answers", response_model=AnswerResponse)
 async def submit_answers(
-    # request: Request, # 不要
     answer_request: Annotated[AnswerRequest, Body(description="ユーザーの解答")],
-    session_data_table_injected: Annotated[
-        Any, Depends(get_session_data_table)
-    ],  # 変更
-    request: Request,  # Requestオブジェクトはaws_request_id取得のために残す
+    session_data_table_injected: Annotated[Any, Depends(get_session_data_table)],
+    request: Request,
 ):
-    endpoint_start_time = time.perf_counter()
     aws_request_id = "N/A"
-    if (
-        "aws.lambda_context" in request.scope
-    ):  # requestオブジェクトはaws_request_id取得のために必要
+    if "aws.lambda_context" in request.scope:
         aws_request_id = request.scope["aws.lambda_context"].aws_request_id
-    logger.info(
-        f"[ReqID: {aws_request_id}] /answers: START - sessionId='{answer_request.sessionId}', num_answers={len(answer_request.answers)}"
+    logger.info(  # エンドポイント開始ログは残します
+        f"[ReqID: {aws_request_id}] POST /answers: START - sessionId='{answer_request.sessionId}', num_answers={len(answer_request.answers)}"
     )
-
-    # クライアント存在確認ロジックは不要になる
-    # logger.info(f"[ReqID: {aws_request_id}] /answers: session_data_table successfully retrieved via Depends.")
 
     session_id = answer_request.sessionId
     user_answers = answer_request.answers
 
     try:
-        step_start_time = time.perf_counter()
         session_data = await get_session_data(session_data_table_injected, session_id)
-        step_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /answers: Step 'get_session_data' completed in {step_end_time - step_start_time:.4f} seconds."
-        )
 
         if session_data is None:
-            logger.warning(
-                f"[ReqID: {aws_request_id}] /answers: Session not found or expired for sessionId: {session_id}"
-            )
+            # logger.warning( # ServiceErrorでカバー
+            # f"[ReqID: {aws_request_id}] /answers: Session not found or expired for sessionId: {session_id}"
+            # )
             raise ServiceError(status_code=404, detail="Session not found or expired.")
 
-        step_start_time = time.perf_counter()
         results = validate_answers(user_answers, session_data)
-        step_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /answers: Step 'validate_answers' completed in {step_end_time - step_start_time:.4f} seconds. Produced {len(results)} results."
-        )
-
         response = AnswerResponse(results=results)
-        endpoint_end_time = time.perf_counter()
-        logger.info(
-            f"[ReqID: {aws_request_id}] /answers: END - Successfully processed request in {endpoint_end_time - endpoint_start_time:.4f} seconds."
+        logger.info(  # エンドポイント終了ログは残します
+            f"[ReqID: {aws_request_id}] POST /answers: END - Successfully processed."
         )
         return response
     except ServiceError as e:
-        endpoint_end_time = time.perf_counter()
-        logger.error(
-            f"[ReqID: {aws_request_id}] /answers: ServiceError caught at endpoint level after {endpoint_end_time - endpoint_start_time:.4f}s. Status: {e.status_code}, Detail: {e.detail}"
+        logger.error(  # ServiceErrorは専用ハンドラでログ出力されるが、リクエストIDを含めるためにここでもログ出力
+            f"[ReqID: {aws_request_id}] POST /answers: ServiceError. Status: {e.status_code}, Detail: {e.detail}"
         )
-        raise e
+        raise e  # service_exception_handler に処理を委譲
     except Exception as e:
-        endpoint_end_time = time.perf_counter()
-        logger.critical(
-            f"[ReqID: {aws_request_id}] /answers: CRITICAL - Unexpected error in submit_answers after {endpoint_end_time - endpoint_start_time:.4f}s: {e}",
+        logger.critical(  # 予期せぬエラーのログは重要なので残します
+            f"[ReqID: {aws_request_id}] POST /answers: CRITICAL - Unexpected error: {e}",
             exc_info=True,
         )
-        raise ServiceError(
+        raise ServiceError(  # クライアントには汎用的なエラーメッセージを返す
             status_code=500,
             detail="An unexpected error occurred while processing your answers.",
         )
@@ -699,9 +541,9 @@ async def submit_answers(
 
 @app.get("/")
 async def root():
-    logger.info("Root path '/' accessed.")
+    logger.info("Root path '/' accessed.")  # ルートパスへのアクセスログは残します
     return {"message": "Quiz App Backend is running!"}
 
 
-# Mangumハンドラ - lifespan="off" が重要
+# Mangumハンドラ
 handler = Mangum(app, lifespan="off")
